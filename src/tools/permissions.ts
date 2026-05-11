@@ -17,7 +17,7 @@ import { z } from 'zod';
 import type { drive_v3 } from 'googleapis';
 import { getGoogleClients } from '../google.js';
 import { log } from '../lib/retry.js';
-import { publicSharingAllowed, permissionBelongsToSelf, assertRateLimit } from '../lib/guards.js';
+import { publicSharingAllowed, permissionBelongsToSelf, assertRateLimit, preflightDestructive } from '../lib/guards.js';
 
 const roleEnum = z.enum(['reader', 'commenter', 'writer', 'fileOrganizer', 'organizer', 'owner']);
 const typeEnum = z.enum(['user', 'group', 'domain', 'anyone']);
@@ -64,8 +64,9 @@ export async function shareFile(input: ShareFileInput): Promise<{
     requestBody.domain = input.domain;
   }
 
+  preflightDestructive('share_file', input);
   if (input.type === 'anyone' && !publicSharingAllowed()) {
-    throw new Error('Public sharing is disabled by ALLOW_PUBLIC_SHARING=false env var. Use type="user", "group", or "domain" instead.');
+    throw new Error('Public sharing is disabled (ALLOW_PUBLIC_SHARING defaults to false). Set ALLOW_PUBLIC_SHARING=true to enable anyone-with-link sharing, or use type="user", "group", or "domain" instead.');
   }
   assertRateLimit('share_file');
   if (input.type === 'anyone') {
@@ -156,6 +157,7 @@ export async function revokePermission(input: RevokePermissionInput): Promise<{
   permission_id: string;
   revoked: true;
 }> {
+  preflightDestructive('revoke_permission', input);
   assertRateLimit('revoke_permission');
   if (!input.force_revoke_self) {
     const isSelf = await permissionBelongsToSelf(input.file_id, input.permission_id);
@@ -197,8 +199,9 @@ export async function createShareLink(input: CreateShareLinkInput): Promise<{
 }> {
   const { drive } = await getGoogleClients();
 
+  preflightDestructive('create_share_link', input);
   if (!publicSharingAllowed()) {
-    throw new Error('Public sharing is disabled by ALLOW_PUBLIC_SHARING=false env var. Cannot create share link.');
+    throw new Error('Public sharing is disabled (ALLOW_PUBLIC_SHARING defaults to false). Set ALLOW_PUBLIC_SHARING=true to enable creating share links.');
   }
   assertRateLimit('create_share_link');
   log('info', 'destructive_op', { tool: 'create_share_link', exposure: 'public', file_id: input.file_id, role: input.role, allow_discovery: input.allow_discovery });

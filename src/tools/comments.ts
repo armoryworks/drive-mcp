@@ -16,6 +16,7 @@
 import { z } from 'zod';
 import type { drive_v3 } from 'googleapis';
 import { getGoogleClients } from '../google.js';
+import { preflightFileMutation } from '../lib/guards.js';
 
 // =========================================================================
 // add_comment
@@ -35,6 +36,7 @@ export async function addComment(input: AddCommentInput): Promise<{
   content: string;
   created_time?: string;
 }> {
+  await preflightFileMutation('add_comment', input.file_id, input);
   const { drive } = await getGoogleClients();
 
   const requestBody: drive_v3.Schema$Comment = { content: input.content };
@@ -132,6 +134,7 @@ export async function resolveComment(input: ResolveCommentInput): Promise<{
   comment_id: string;
   resolved: true;
 }> {
+  await preflightFileMutation('resolve_comment', input.file_id, input);
   const { drive } = await getGoogleClients();
 
   // The comments.update endpoint with resolved=true marks the comment as

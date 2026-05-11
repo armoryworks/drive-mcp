@@ -136,7 +136,7 @@ const tools = [
   // ---- Drive ----
   tool({ name: 'move_file', description: 'Move a Drive file or folder to a different parent folder.', schema: moveFileSchema, handler: moveFile }),
   tool({ name: 'rename_file', description: 'Rename a Drive file or folder (changes title only; file ID stable).', schema: renameFileSchema, handler: renameFile }),
-  tool({ name: 'delete_file', description: '[DESTRUCTIVE] Delete a Drive file or folder. Default trashes (recoverable 30 days). permanent=true ALONE falls back to trash; pair with confirm_permanent=true for irrecoverable deletion.', schema: deleteFileSchema, handler: deleteFile }),
+  tool({ name: 'delete_file', description: '[REVERSIBLE] Move a Drive file or folder to Trash. The user can recover it from the Drive UI (drive.google.com/drive/trash) within 30 days. This MCP does NOT support permanent deletion — only the user can perform that action, directly via Drive.', schema: deleteFileSchema, handler: deleteFile }),
   tool({ name: 'restore_file', description: 'Restore a trashed file. Only works for trashed files, not permanently deleted ones.', schema: restoreFileSchema, handler: restoreFile }),
   tool({ name: 'list_folder', description: 'List a Drive folder contents. Sorted folders-first then alphabetically.', schema: listFolderSchema, handler: listFolder }),
   tool({ name: 'create_folder', description: 'Create a new Drive folder. Optionally inside a specific parent folder (defaults to root).', schema: createFolderSchema, handler: createFolder }),
@@ -183,7 +183,7 @@ const tools = [
   tool({ name: 'batch_doc_update', description: 'Apply multiple Doc edits atomically in one batchUpdate call. Faster, cheaper, and atomic compared to N tool calls.', schema: batchDocUpdateSchema, handler: batchDocUpdate }),
   tool({ name: 'batch_sheet_update', description: 'Apply multiple Sheet edits in one logical batch (values + structural ops grouped).', schema: batchSheetUpdateSchema, handler: batchSheetUpdate }),
   tool({ name: 'batch_move', description: '[DESTRUCTIVE] Move many files into a target folder in one call. Pass dry_run=true to preview without moving. Returns succeeded + failed arrays.', schema: batchMoveSchema, handler: batchMove }),
-  tool({ name: 'batch_delete', description: '[DESTRUCTIVE] Delete many files in one call. Default trashes. permanent=true ALONE falls back to trash; permanent=true + confirm_permanent=true is required for irrecoverable deletion (capped at 20 files). Pass dry_run=true to preview.', schema: batchDeleteSchema, handler: batchDelete }),
+  tool({ name: 'batch_delete', description: '[REVERSIBLE] Move many files to Trash in one call. Files are recoverable from the Drive UI for 30 days. Permanent deletion is intentionally not exposed through this MCP. Pass dry_run=true to preview without acting.', schema: batchDeleteSchema, handler: batchDelete }),
 
   // ---- Comments / Suggestions ----
   tool({ name: 'add_comment', description: 'Add a comment to a Drive file (Doc/Sheet/Slide/most file types).', schema: addCommentSchema, handler: addComment }),
@@ -200,7 +200,7 @@ const tools = [
 ] as const;
 
 const server = new Server(
-  { name: 'armoryworks-drive-mcp', version: '0.2.0' },
+  { name: 'armoryworks-drive-mcp', version: '0.2.2' },
   { capabilities: { tools: {} } },
 );
 
@@ -276,7 +276,7 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  log('info', 'server_started', { version: '0.2.0', tool_count: tools.length });
+  log('info', 'server_started', { version: '0.2.2', tool_count: tools.length });
 }
 
 main().catch((err: unknown) => {

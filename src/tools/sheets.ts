@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import { getGoogleClients } from '../google.js';
 import { log } from '../lib/retry.js';
+import { preflightFileMutation, snapshotBeforeEdit } from '../lib/guards.js';
 
 // Sheets API accepts cell values as strings, numbers, or booleans. We
 // preserve the original type so e.g. dollar amounts stay numeric.
@@ -47,6 +48,7 @@ export async function appendRow(input: AppendRowInput): Promise<{
   updated_range: string;
   updated_rows: number;
 }> {
+  await preflightFileMutation('append_row', input.spreadsheet_id, input);
   const { sheets } = await getGoogleClients();
 
   const result = await sheets.spreadsheets.values.append({
@@ -93,6 +95,7 @@ export async function updateCell(input: UpdateCellInput): Promise<{
   spreadsheet_id: string;
   updated_range: string;
 }> {
+  await preflightFileMutation('update_cell', input.spreadsheet_id, input);
   const { sheets } = await getGoogleClients();
 
   const result = await sheets.spreadsheets.values.update({
@@ -141,6 +144,7 @@ export async function updateRange(input: UpdateRangeInput): Promise<{
   updated_columns: number;
   updated_cells: number;
 }> {
+  await preflightFileMutation('update_range', input.spreadsheet_id, input);
   const { sheets } = await getGoogleClients();
 
   const result = await sheets.spreadsheets.values.update({
@@ -246,6 +250,8 @@ export async function findAndReplaceInSheet(input: FindAndReplaceInSheetInput): 
     };
   }
 
+  await preflightFileMutation('find_and_replace_in_sheet', input.spreadsheet_id, input);
+  await snapshotBeforeEdit(input.spreadsheet_id, 'find_and_replace_in_sheet');
   log('info', 'destructive_op', { tool: 'find_and_replace_in_sheet', spreadsheet_id: input.spreadsheet_id, find_length: input.find.length });
 
   const findReplaceRequest: Record<string, unknown> = {
@@ -542,6 +548,7 @@ export async function deleteRows(input: DeleteRowsInput): Promise<{
   spreadsheet_id: string;
   deleted_count: number;
 }> {
+  await preflightFileMutation('delete_rows', input.spreadsheet_id, input);
   return deleteDimension(input, 'ROWS');
 }
 
@@ -558,6 +565,7 @@ export async function deleteColumns(input: DeleteColumnsInput): Promise<{
   spreadsheet_id: string;
   deleted_count: number;
 }> {
+  await preflightFileMutation('delete_columns', input.spreadsheet_id, input);
   return deleteDimension(input, 'COLUMNS');
 }
 
@@ -603,6 +611,7 @@ export async function insertRows(input: InsertRowsInput): Promise<{
   spreadsheet_id: string;
   inserted_count: number;
 }> {
+  await preflightFileMutation('insert_rows', input.spreadsheet_id, input);
   return insertDimension(input, 'ROWS');
 }
 
@@ -620,6 +629,7 @@ export async function insertColumns(input: InsertColumnsInput): Promise<{
   spreadsheet_id: string;
   inserted_count: number;
 }> {
+  await preflightFileMutation('insert_columns', input.spreadsheet_id, input);
   return insertDimension(input, 'COLUMNS');
 }
 

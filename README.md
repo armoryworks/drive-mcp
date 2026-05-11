@@ -144,28 +144,57 @@ Restart Claude Desktop. The tools appear in any new conversation.
 
 ## Safety considerations
 
-This MCP can permanently delete files, change permissions, and overwrite content. The threat model is **agent misbehavior or accidental misuse**, not a malicious actor — if someone has filesystem access to your machine, they already have your tokens.
+This MCP can move files to Trash, change permissions, and overwrite content. The threat model is **agent misbehavior or accidental misuse**, not a malicious actor — if someone has filesystem access to your machine, they already have your tokens.
 
-Built-in guardrails:
+**The MCP runs safe by default.** Dangerous capabilities (public sharing, arbitrary image URLs, large content inserts) require explicit opt-in via env var. You have to deliberately loosen each control.
 
-- **Two-axis confirmation for permanent delete.** `delete_file` and `batch_delete` require `permanent: true` AND `confirm_permanent: true` to actually permanently delete. Setting only `permanent: true` falls back to Trash with a warning in the response.
-- **Per-call cap on permanent batch delete.** `batch_delete` is capped at 100 file IDs normally, 20 when permanent.
-- **Self-lockout protection.** `revoke_permission` refuses to revoke your own access unless `force_revoke_self: true` is set.
-- **Dry-run mode on bulk ops.** `batch_move`, `batch_delete`, `find_and_replace`, `find_and_replace_in_sheet` accept `dry_run: true` to preview what would change without changing anything.
-- **Rate limits.** Per-minute caps on the highest-risk tools (`batch_delete`: 5/min, `delete_file`: 30/min, `revoke_permission`: 20/min, `share_file`: 50/min, `create_share_link`: 20/min) prevent runaway loops.
-- **Audit logging.** Every destructive op writes a structured stderr line. Set `LOG_LEVEL=info` for the full audit trail.
+### Always-on built-in protections (cannot be disabled)
 
-Optional environment-variable guardrails:
+- **No permanent deletion.** `delete_file` and `batch_delete` only Trash. The user recovers from Drive UI within 30 days. Permanent deletion is intentionally not exposed.
+- **Self-lockout protection.** `revoke_permission` refuses to revoke your own access unless `force_revoke_self: true`.
+- **Per-tool rate limits.** `batch_delete`: 5/min, `delete_file`: 30/min, `revoke_permission`: 20/min, `share_file`: 50/min, `create_share_link`: 20/min.
+- **Per-document rate limit.** Any one file: 60 modifications/minute (configurable). Catches agent loops on a single doc.
+- **Session destructive-op budget.** Hard cap of 500 destructive operations per server process (configurable). Forces restart for "this agent is doing a lot."
+- **Replay detection.** Identical tool+args within 2s window are refused. Catches retry loops.
+- **Body-size cap on inserts.** Text inserts capped at 256 KiB by default. Prevents content bombing.
+- **Audit logging.** Every destructive op writes a structured stderr line (`LOG_LEVEL=info` for full audit). Optional `AUDIT_WEBHOOK_URL` posts the same events to a webhook.
+- **Dry-run mode** on `batch_move`, `batch_delete`, `find_and_replace`, `find_and_replace_in_sheet`.
 
-- `ALLOW_PUBLIC_SHARING=false` — disables `create_share_link` and `share_file` with `type=anyone` entirely.
-- `PROTECTED_FOLDER_IDS=root,X1Y2Z3` — destructive ops on files inside listed folders are refused.
-- `LOG_LEVEL=debug|info|warn|error|silent` — controls stderr logging verbosity (default `warn`).
+### Fail-closed defaults — set explicitly to loosen
 
-Operational recommendations:
+| Env var | Default (safe) | What it controls |
+|---|---|---|
+| `ALLOW_PUBLIC_SHARING` | `false` (deny) | Set to `true` to allow `share_file` with `type=anyone` and `create_share_link`. |
+| `INSERT_IMAGE_ALLOWED_HOSTS` | `drive.google.com,lh3.googleusercontent.com,googleusercontent.com` | Allowlist for `insert_image` URLs. Set `*` to allow any host (not recommended). |
+| `INSERT_IMAGE_REQUIRE_HTTPS` | `true` (deny `http://`) | Set `false` to permit plain-HTTP image URLs. |
+| `BACKUP_BEFORE_DESTRUCTIVE` | `true` (always backup) | Set `false` to skip automatic backups before destructive content edits. Backups land in `_drive-mcp-backups/` at your Drive root. |
 
-- Keep a periodic Drive backup (Google Takeout or third-party). Trash isn't a backup; 30 days isn't forever.
-- Use `dry_run: true` on any bulk operation that affects more than a handful of files.
-- Run with `LOG_LEVEL=info` if you want a complete record of destructive actions in your MCP server logs.
+### Opt-in tighter modes (default off — set to enable)
+
+| Env var | Default | What it does |
+|---|---|---|
+| `READ_ONLY` | unset | Set `true` to disable ALL write/delete/share tools. Useful for exploration sessions. |
+| `PROTECTED_FOLDER_IDS` | empty | Comma-separated folder IDs. Destructive ops on files inside are refused. |
+| `LOCKED_FILE_IDS` | empty | Comma-separated file IDs. Cannot be modified or deleted. |
+| `DRY_RUN_ALL` | `false` | Set `true` to force every destructive op into preview mode regardless of how invoked. |
+| `AUDIT_WEBHOOK_URL` | unset | URL to POST audit events to in addition to stderr logging. |
+
+### Tunable thresholds
+
+| Env var | Default | What it tunes |
+|---|---|---|
+| `MAX_INSERT_BYTES` | `262144` (256 KiB) | Per-call cap on inserted text. |
+| `MAX_DESTRUCTIVE_OPS_PER_SESSION` | `500` | Session budget for destructive ops. |
+| `PER_DOC_OPS_PER_MINUTE` | `60` | Per-document modification rate. |
+| `REPLAY_WINDOW_MS` | `2000` | Window for replay detection. |
+| `LOG_LEVEL` | `warn` | `debug` / `info` / `warn` / `error` / `silent`. |
+
+### Operational recommendations
+
+- Keep a periodic Drive backup (Google Takeout or third-party). Drive Trash isn't a backup; 30 days isn't forever. `BACKUP_BEFORE_DESTRUCTIVE=true` (the default) snapshots files before edits but doesn't replace whole-drive backups.
+- Use `dry_run: true` (or set `DRY_RUN_ALL=true` for the whole session) on bulk operations affecting more than a few files.
+- Run with `LOG_LEVEL=info` for a complete record of destructive actions.
+- For high-stakes work, run with `READ_ONLY=true` first to let the agent plan, then re-run without it once you've reviewed the plan.
 
 ## Configuration reference
 

@@ -18,7 +18,7 @@ import { z } from 'zod';
 import type { docs_v1, sheets_v4 } from 'googleapis';
 import { getGoogleClients } from '../google.js';
 import { log } from '../lib/retry.js';
-import { assertRateLimit, assertFileNotInProtectedFolder } from '../lib/guards.js';
+import { assertRateLimit, assertFileNotInProtectedFolder, preflightDestructive, preflightFileMutation, snapshotBeforeEdit } from '../lib/guards.js';
 
 // =========================================================================
 // batch_doc_update
@@ -72,6 +72,8 @@ export async function batchDocUpdate(input: BatchDocUpdateInput): Promise<{
   document_id: string;
   operations_executed: number;
 }> {
+  await preflightFileMutation('batch_doc_update', input.document_id, input);
+  await snapshotBeforeEdit(input.document_id, 'batch_doc_update');
   const { docs } = await getGoogleClients();
 
   const requests: docs_v1.Schema$Request[] = [];
@@ -193,6 +195,8 @@ export async function batchSheetUpdate(input: BatchSheetUpdateInput): Promise<{
   spreadsheet_id: string;
   operations_executed: number;
 }> {
+  await preflightFileMutation('batch_sheet_update', input.spreadsheet_id, input);
+  await snapshotBeforeEdit(input.spreadsheet_id, 'batch_sheet_update');
   const { sheets } = await getGoogleClients();
 
   // Sheets has two separate APIs: values for cell content, batchUpdate for
@@ -281,6 +285,7 @@ export async function batchMove(input: BatchMoveInput): Promise<{
   failed: Array<{ file_id: string; error: string }>;
   dry_run: boolean;
 }> {
+  preflightDestructive('batch_move', input);
   if (input.dry_run) {
     return {
       succeeded: [],
@@ -323,10 +328,8 @@ export async function batchMove(input: BatchMoveInput): Promise<{
 // =========================================================================
 
 export const batchDeleteSchema = z.object({
-  file_ids: z.array(z.string().min(1)).min(1).max(100).describe('Drive file IDs to delete. Max 100 per call (or 20 if permanent=true).'),
-  permanent: z.boolean().default(false).describe('If true AND confirm_permanent is also true, permanently delete (irrecoverable). Otherwise move to Trash.'),
-  confirm_permanent: z.boolean().default(false).describe('Required second confirmation for permanent deletion. Without this, "permanent: true" falls back to trash and a warning is returned.'),
-  dry_run: z.boolean().default(false).describe('If true, returns the file IDs that WOULD be deleted without deleting them. Useful for previewing bulk operations.'),
+  file_ids: z.array(z.string().min(1)).min(1).max(100).describe('Drive file IDs to delete. Max 100 per call.'),
+  dry_run: z.boolean().default(false).describe('If true, returns the file IDs that WOULD be trashed without doing anything. Useful for previewing bulk operations.'),
 });
 
 export type BatchDeleteInput = z.infer<typeof batchDeleteSchema>;
@@ -334,29 +337,23 @@ export type BatchDeleteInput = z.infer<typeof batchDeleteSchema>;
 export async function batchDelete(input: BatchDeleteInput): Promise<{
   succeeded: string[];
   failed: Array<{ file_id: string; error: string }>;
-  mode: 'trashed' | 'permanent';
   dry_run: boolean;
-  warning?: string;
+  recovery_message: string;
 }> {
-  const isPermanent = input.permanent && input.confirm_permanent;
-  if (isPermanent && input.file_ids.length > 20) {
-    throw new Error('batch_delete with permanent=true is capped at 20 file IDs per call (you sent ' + input.file_ids.length + '). Split into smaller batches to confirm intent.');
-  }
+  preflightDestructive('batch_delete', input);
+  const recoveryMsg = 'Files moved to Drive Trash. The user can recover any of them from the Drive UI (drive.google.com/drive/trash) within 30 days. After 30 days Google auto-purges. Permanent deletion is intentionally not exposed through this MCP and must be performed by the user directly.';
 
   if (input.dry_run) {
     return {
       succeeded: [],
       failed: [],
-      mode: isPermanent ? 'permanent' : 'trashed',
       dry_run: true,
-      ...(input.permanent && !input.confirm_permanent
-        ? { warning: 'permanent=true without confirm_permanent would fall back to trash. Pass confirm_permanent=true for true irrecoverable deletion.' }
-        : {}),
+      recovery_message: 'Dry run only — no files were trashed. ' + recoveryMsg,
     };
   }
 
   assertRateLimit('batch_delete');
-  log('info', 'destructive_op', { tool: 'batch_delete', mode: isPermanent ? 'permanent' : 'trashed', count: input.file_ids.length });
+  log('info', 'destructive_op', { tool: 'batch_delete', mode: 'trashed', count: input.file_ids.length });
 
   const { drive } = await getGoogleClients();
   const succeeded: string[] = [];
@@ -365,29 +362,21 @@ export async function batchDelete(input: BatchDeleteInput): Promise<{
   for (const fileId of input.file_ids) {
     try {
       await assertFileNotInProtectedFolder(fileId, 'batch_delete');
-      if (isPermanent) {
-        await drive.files.delete({ fileId, supportsAllDrives: true });
-      } else {
-        await drive.files.update({
-          fileId,
-          requestBody: { trashed: true },
-          supportsAllDrives: true,
-        });
-      }
+      await drive.files.update({
+        fileId,
+        requestBody: { trashed: true },
+        supportsAllDrives: true,
+      });
       succeeded.push(fileId);
     } catch (err) {
       failed.push({ file_id: fileId, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
-  const out: { succeeded: string[]; failed: Array<{ file_id: string; error: string }>; mode: 'trashed' | 'permanent'; dry_run: boolean; warning?: string } = {
+  return {
     succeeded,
     failed,
-    mode: isPermanent ? 'permanent' : 'trashed',
     dry_run: false,
+    recovery_message: recoveryMsg,
   };
-  if (input.permanent && !input.confirm_permanent) {
-    out.warning = 'permanent=true was requested but confirm_permanent was not set; fell back to trash. Pass confirm_permanent=true alongside permanent=true to authorize irrecoverable deletion.';
-  }
-  return out;
 }

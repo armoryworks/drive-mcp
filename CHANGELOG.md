@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] — Unreleased
+
+Comprehensive safety pass: Tier A + B + C guardrails from the v0.2.0 roadmap, with **fail-closed defaults** on every dangerous capability. The MCP is now safe by default; the user must explicitly opt in to looser behavior via env var.
+
+### Added — Always-on protections
+
+- `READ_ONLY` env var. Set `true` to disable all write/delete/share tools.
+- Body-size cap on text inserts. `append_to_doc`, `insert_at_heading`, `update_table_cell`, `create_doc` initial_content, and `update_cell`/`update_range` payloads are capped at 256 KiB by default (configurable via `MAX_INSERT_BYTES`).
+- Per-document modification rate limit. Any single file can be modified at most 60 times per minute (configurable via `PER_DOC_OPS_PER_MINUTE`). Catches agent loops on one doc.
+- Session destructive-op budget. Hard cap of 500 destructive operations per server process (configurable via `MAX_DESTRUCTIVE_OPS_PER_SESSION`).
+- Replay detection. Identical tool+args within a 2-second window are refused (configurable via `REPLAY_WINDOW_MS`). Catches retry loops.
+- `LOCKED_FILE_IDS` env var. Comma-separated file IDs that may never be modified or deleted in this session.
+- Automatic backup before destructive content edits. `find_and_replace`, `delete_paragraph`, `batch_doc_update`, `find_and_replace_in_sheet`, `batch_sheet_update` snapshot the file to `_drive-mcp-backups/` before mutating. Controlled by `BACKUP_BEFORE_DESTRUCTIVE` (default `true` — fail-closed).
+- `AUDIT_WEBHOOK_URL` env var. Posts the same structured audit events that go to stderr to an external URL.
+- `DRY_RUN_ALL` env var. Forces every destructive op into preview mode regardless of how invoked.
+- `preflightDestructive` and `preflightFileMutation` helpers in guards. Composed at the top of every destructive handler.
+
+### Changed — Fail-closed defaults
+
+- **`ALLOW_PUBLIC_SHARING` now defaults to `false`.** v0.2.1 defaulted to `true`. `share_file` with `type=anyone` and `create_share_link` are blocked unless explicitly enabled. **Migration:** if you previously relied on public sharing, set `ALLOW_PUBLIC_SHARING=true` in your env.
+- `INSERT_IMAGE_ALLOWED_HOSTS` introduced with a Drive-only default allowlist (`drive.google.com`, `lh3.googleusercontent.com`, `googleusercontent.com`). Other hosts blocked. Set `INSERT_IMAGE_ALLOWED_HOSTS=*` to allow any host.
+- `INSERT_IMAGE_REQUIRE_HTTPS` introduced, default `true`. Plain HTTP image URLs refused unless explicitly allowed.
+- `BACKUP_BEFORE_DESTRUCTIVE` introduced, default `true`. Backups happen by default; opt out by setting `false`.
+
+### Changed — Tool descriptions
+
+- Several destructive tool descriptions now document the additional pre-flight checks they run.
+
+## [0.2.1] — Unreleased
+
+### Changed
+
+- **Permanent deletion removed.** `delete_file` and `batch_delete` no longer accept `permanent` or `confirm_permanent` parameters. All deletions go to Drive Trash and are recoverable from the Drive UI for 30 days. Permanent deletion is now intentionally only available to the user, performed directly through the Drive interface — not exposed to agents or automated callers. Both tools now return a `recovery_message` describing the recovery path. Tool descriptions reframed from `[DESTRUCTIVE]` to `[REVERSIBLE]`. This is a deliberate safety tightening: the cost of an agent misbehaving and permanently deleting irreplaceable content is asymmetric to the convenience of a one-call permanent-delete API.
+
+### Removed
+
+- `delete_file` schema: removed `permanent` and `confirm_permanent` parameters.
+- `batch_delete` schema: removed `permanent`, `confirm_permanent`, and the per-call cap of 20 (now uniformly 100). Removed `mode` from response (always trashed).
+
+### Migration notes for v0.2.0 callers
+
+Code that passed `permanent: true` no longer has any effect — those parameters are silently dropped by Zod. Behavior is unchanged for callers using the two-axis confirmation correctly (which already fell back to trash when `confirm_permanent` was missing); only the rare caller that passed both flags will see different behavior. Permanent deletion now requires the user to visit Drive Trash manually.
+
 ## [0.2.0] — 2026-05-11
 
 Major expansion from 13 tools to ~56, plus a meaningful safety pass. The MCP now covers the full Drive lifecycle — create, read, update, delete, restructure, share, export — and is no longer a complement to Google's official Drive MCP but a complete replacement.

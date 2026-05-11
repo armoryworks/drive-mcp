@@ -13,7 +13,7 @@ import { z } from 'zod';
 import type { drive_v3 } from 'googleapis';
 import { getGoogleClients } from '../google.js';
 import { log } from '../lib/retry.js';
-import { assertFileNotInProtectedFolder, assertRateLimit } from '../lib/guards.js';
+import { assertRateLimit, preflightFileMutation, preflightDestructive } from '../lib/guards.js';
 
 // =========================================================================
 // move_file
@@ -29,7 +29,7 @@ export type MoveFileInput = z.infer<typeof moveFileSchema>;
 export async function moveFile(input: MoveFileInput): Promise<{
   id: string; name: string; parents: string[]; webViewLink?: string;
 }> {
-  await assertFileNotInProtectedFolder(input.file_id, 'move_file');
+  await preflightFileMutation('move_file', input.file_id, input);
   const { drive } = await getGoogleClients();
   const current = await drive.files.get({ fileId: input.file_id, fields: 'parents', supportsAllDrives: true });
   const previousParents = (current.data.parents ?? []).join(',');
@@ -62,6 +62,7 @@ export type RenameFileInput = z.infer<typeof renameFileSchema>;
 export async function renameFile(input: RenameFileInput): Promise<{
   id: string; name: string; webViewLink?: string;
 }> {
+  await preflightFileMutation('rename_file', input.file_id, input);
   const { drive } = await getGoogleClients();
   const renamed = await drive.files.update({
     fileId: input.file_id,
@@ -82,42 +83,30 @@ export async function renameFile(input: RenameFileInput): Promise<{
 
 export const deleteFileSchema = z.object({
   file_id: z.string().min(1).describe('Drive file ID of the file or folder to delete.'),
-  permanent: z.boolean().default(false).describe('If true AND confirm_permanent is also true, permanently deletes the file (cannot be recovered). Otherwise moves to Trash (recoverable for 30 days).'),
-  confirm_permanent: z.boolean().default(false).describe('Required second confirmation for permanent deletion. Pass true to authorize. Without this, "permanent: true" falls back to trash and a warning is returned.'),
 });
 
 export type DeleteFileInput = z.infer<typeof deleteFileSchema>;
 
 export async function deleteFile(input: DeleteFileInput): Promise<{
-  id: string; deleted: 'trashed' | 'permanent';
-  warning?: string;
+  id: string;
+  deleted: 'trashed';
+  recovery_message: string;
 }> {
+  await preflightFileMutation('delete_file', input.file_id, input);
   assertRateLimit('delete_file');
-  await assertFileNotInProtectedFolder(input.file_id, 'delete_file');
-  const { drive } = await getGoogleClients();
-
-  // Two-axis confirmation for permanent delete: both permanent AND
-  // confirm_permanent must be true. Otherwise fall back to trash.
-  if (input.permanent && input.confirm_permanent) {
-    log('info', 'destructive_op', { tool: 'delete_file', mode: 'permanent', file_id: input.file_id });
-    await drive.files.delete({ fileId: input.file_id, supportsAllDrives: true });
-    return { id: input.file_id, deleted: 'permanent' };
-  }
-
   log('info', 'destructive_op', { tool: 'delete_file', mode: 'trashed', file_id: input.file_id });
+
+  const { drive } = await getGoogleClients();
   await drive.files.update({
     fileId: input.file_id,
     requestBody: { trashed: true },
     supportsAllDrives: true,
   });
-  const result: { id: string; deleted: 'trashed' | 'permanent'; warning?: string } = {
+  return {
     id: input.file_id,
     deleted: 'trashed',
+    recovery_message: 'File moved to Drive Trash. The user can recover it from the Drive UI (drive.google.com/drive/trash) within 30 days. After 30 days Google auto-purges. Permanent deletion is intentionally not exposed through this MCP and must be performed by the user directly.',
   };
-  if (input.permanent && !input.confirm_permanent) {
-    result.warning = 'permanent=true was requested but confirm_permanent was not set; fell back to trash. Pass confirm_permanent=true alongside permanent=true to authorize irrecoverable deletion.';
-  }
-  return result;
 }
 
 // =========================================================================
@@ -199,6 +188,7 @@ export type CreateFolderInput = z.infer<typeof createFolderSchema>;
 export async function createFolder(input: CreateFolderInput): Promise<{
   id: string; name: string; parents: string[]; webViewLink?: string;
 }> {
+  preflightDestructive('create_folder', input);
   const { drive } = await getGoogleClients();
   const created = await drive.files.create({
     requestBody: {
@@ -232,6 +222,11 @@ export type CreateDocInput = z.infer<typeof createDocSchema>;
 export async function createDoc(input: CreateDocInput): Promise<{
   id: string; title: string; parents: string[]; webViewLink?: string;
 }> {
+  preflightDestructive('create_doc', input);
+  if (input.initial_content) {
+    const { assertInsertSize } = await import('../lib/guards.js');
+    assertInsertSize(input.initial_content, 'create_doc');
+  }
   const { drive, docs } = await getGoogleClients();
   const created = await drive.files.create({
     requestBody: {
@@ -275,6 +270,7 @@ export async function createSheet(input: CreateSheetInput): Promise<{
   id: string; title: string; parents: string[]; webViewLink?: string;
   sheets: Array<{ sheet_id: number; title: string }>;
 }> {
+  preflightDestructive('create_sheet', input);
   const { drive, sheets } = await getGoogleClients();
   const created = await sheets.spreadsheets.create({
     requestBody: {
@@ -335,6 +331,7 @@ export type CopyFileInput = z.infer<typeof copyFileSchema>;
 export async function copyFile(input: CopyFileInput): Promise<{
   id: string; name: string; parents: string[]; webViewLink?: string;
 }> {
+  preflightDestructive('copy_file', input);
   const { drive } = await getGoogleClients();
   const requestBody: drive_v3.Schema$File = {};
   if (input.new_name) requestBody.name = input.new_name;

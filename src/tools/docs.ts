@@ -16,6 +16,7 @@ import { z } from 'zod';
 import type { docs_v1 } from 'googleapis';
 import { getGoogleClients } from '../google.js';
 import { log } from '../lib/retry.js';
+import { preflightFileMutation, assertInsertSize, assertImageUrlAllowed, snapshotBeforeEdit } from '../lib/guards.js';
 
 // =========================================================================
 // find_and_replace
@@ -64,6 +65,8 @@ export async function findAndReplace(input: FindAndReplaceInput): Promise<{
     };
   }
 
+  await preflightFileMutation('find_and_replace', input.document_id, input);
+  await snapshotBeforeEdit(input.document_id, 'find_and_replace');
   log('info', 'destructive_op', { tool: 'find_and_replace', document_id: input.document_id, find_length: input.find.length });
 
   const result = await docs.documents.batchUpdate({
@@ -117,6 +120,8 @@ export async function appendToDoc(input: AppendToDocInput): Promise<{
   document_id: string;
   characters_inserted: number;
 }> {
+  await preflightFileMutation('append_to_doc', input.document_id, input);
+  assertInsertSize(input.text, 'append_to_doc');
   const { docs } = await getGoogleClients();
 
   // Use endOfSegmentLocation to append. Robust to document length changes
@@ -174,6 +179,8 @@ export async function insertAtHeading(input: InsertAtHeadingInput): Promise<{
   inserted_at_index: number;
   characters_inserted: number;
 }> {
+  await preflightFileMutation('insert_at_heading', input.document_id, input);
+  assertInsertSize(input.content, 'insert_at_heading');
   const { docs } = await getGoogleClients();
 
   // Read the document to find the heading's location.
@@ -270,6 +277,7 @@ export async function applyTextStyle(input: ApplyTextStyleInput): Promise<{
   document_id: string;
   occurrences_styled: number;
 }> {
+  await preflightFileMutation('apply_text_style', input.document_id, input);
   const { docs } = await getGoogleClients();
 
   const doc = await docs.documents.get({ documentId: input.document_id });
@@ -420,6 +428,7 @@ export async function applyParagraphStyle(input: ApplyParagraphStyleInput): Prom
   matched_start_index: number;
   matched_end_index: number;
 }> {
+  await preflightFileMutation('apply_paragraph_style', input.document_id, input);
   const { docs } = await getGoogleClients();
   const doc = await docs.documents.get({ documentId: input.document_id });
   const body = doc.data.body;
@@ -520,6 +529,8 @@ export async function deleteParagraph(input: DeleteParagraphInput): Promise<{
   deleted_start_index: number;
   deleted_end_index: number;
 }> {
+  await preflightFileMutation('delete_paragraph', input.document_id, input);
+  await snapshotBeforeEdit(input.document_id, 'delete_paragraph');
   const { docs } = await getGoogleClients();
   const doc = await docs.documents.get({ documentId: input.document_id });
   const body = doc.data.body;
@@ -589,6 +600,7 @@ export async function insertTable(input: InsertTableInput): Promise<{
   rows: number;
   columns: number;
 }> {
+  await preflightFileMutation('insert_table', input.document_id, input);
   const { docs } = await getGoogleClients();
   const doc = await docs.documents.get({ documentId: input.document_id });
   const body = doc.data.body;
@@ -662,6 +674,8 @@ export async function updateTableCell(input: UpdateTableCellInput): Promise<{
   column: number;
   cell_start_index: number;
 }> {
+  await preflightFileMutation('update_table_cell', input.document_id, input);
+  assertInsertSize(input.content, 'update_table_cell');
   const { docs } = await getGoogleClients();
   const doc = await docs.documents.get({ documentId: input.document_id });
   const body = doc.data.body;
@@ -744,6 +758,8 @@ export async function insertImage(input: InsertImageInput): Promise<{
   document_id: string;
   inserted_at_index: number;
 }> {
+  await preflightFileMutation('insert_image', input.document_id, input);
+  assertImageUrlAllowed(input.image_url);
   const { docs } = await getGoogleClients();
   const doc = await docs.documents.get({ documentId: input.document_id });
   const body = doc.data.body;
@@ -835,6 +851,7 @@ export async function applyListStyle(input: ApplyListStyleInput): Promise<{
   matched_end_index: number;
   action: 'applied' | 'removed';
 }> {
+  await preflightFileMutation('apply_list_style', input.document_id, input);
   const { docs } = await getGoogleClients();
   const doc = await docs.documents.get({ documentId: input.document_id });
   const body = doc.data.body;
