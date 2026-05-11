@@ -1,14 +1,19 @@
 {
   "name": "@armoryworks/drive-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server exposing Google Drive, Docs, and Sheets write operations (move, rename, delete, in-place edit) that the official Google Drive MCP doesn't.",
   "license": "MIT",
   "author": "Armory Works Technology, LLC",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
+    "drive-mcp": "dist/index.js",
+    "drive-mcp-auth": "dist/auth-cli.js",
     "armoryworks-drive-mcp": "dist/index.js",
     "armoryworks-drive-mcp-auth": "dist/auth-cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist",
