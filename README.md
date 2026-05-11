@@ -1,40 +1,96 @@
 # @armoryworks/drive-mcp
 
-An [MCP](https://modelcontextprotocol.io/) server that exposes the Google Drive, Docs, and Sheets **write operations** that Google's official Drive MCP doesn't.
-
-The official `Google Drive` MCP supports read + create only. This wrapper fills the gap with **move, rename, delete, restore, in-place find-and-replace, append, insert-at-heading, text styling, and sheet cell/row updates** — the operations that turn an AI agent from "creator of new content" into "manager of existing content."
+An [MCP](https://modelcontextprotocol.io/) server that gives AI agents full lifecycle control over Google Drive, Docs, and Sheets — create, read, update, delete, restructure, share, and export.
 
 Built by [Armory Works Technology, LLC](https://armoryworks.com) for use with [Forge](https://forge.armoryworks.com) and adopted internally for organizing the firm's own Google Workspace. MIT licensed; reuse freely.
 
-## Tools
+## What is this for
+
+Google ships an official Drive MCP that is intentionally conservative: read + create only, no destructive operations, no in-place edits. That's defensible for a public default — but it means an AI agent helping you organize your Drive can create folders and copy files but can't delete the duplicates it created, fix metadata, restructure a document, or share work with collaborators.
+
+This MCP closes that gap. After v0.2.0, it is a complete Drive toolkit: 56 tools spanning all the operations a working agent actually needs. The wrapper is single-user — designed for you to install on your own machine with your own OAuth credentials. It is not a multi-tenant service.
+
+## Tools (v0.2.0)
+
+### Read
+| Tool | What it does |
+|---|---|
+| `get_document` | Read a Doc's paragraph structure + text + indices. **Use this before editing.** |
+| `get_spreadsheet` | Read a Sheet's tabs + values + ranges. |
+| `get_file_metadata` | Owner, size, mime, parents, sharing state for any file. |
 
 ### Drive
-
 | Tool | What it does |
 |---|---|
-| `move_file` | Change a file's parent folder. The fix for "I have duplicates at root that should be in folders." |
-| `rename_file` | Change a file's title without affecting its content or ID. |
-| `delete_file` | Trash (default) or permanently delete a file. The fix for "I can't delete via the official MCP." |
+| `move_file` | Change a file's parent folder. |
+| `rename_file` | Change a file's title (ID stable). |
+| `delete_file` | Trash (default) or permanently delete (requires `confirm_permanent`). |
 | `restore_file` | Restore a trashed file. |
-| `list_folder` | List a folder's contents, sorted folders-first then alphabetically. |
+| `list_folder` | List a folder's contents. |
+| `create_folder` | Create a new folder inside a parent. |
+| `create_doc` | Create a new Google Doc with optional initial content. |
+| `create_sheet` | Create a new Sheets spreadsheet with a named first tab. |
+| `copy_file` | Copy + optional rename + optional target folder in one call. |
+| `search_files` | Search by name, full-text, mime type, parent, modification time, or raw query. |
 
 ### Docs
-
 | Tool | What it does |
 |---|---|
-| `find_and_replace` | Sweep a Google Doc replacing one string with another. |
-| `append_to_doc` | Append text to the end of a doc — ideal for log entries, journals, running notes. |
-| `insert_at_heading` | Insert content after (or before) a specific heading by text match. |
-| `apply_text_style` | Bold/italic/underline/font-size/color on every occurrence of given text. |
+| `find_and_replace` | Sweep a Doc replacing one string with another. Supports `dry_run`. |
+| `append_to_doc` | Append text to the end of a Doc. |
+| `insert_at_heading` | Insert content at a specific anchor by exact text. |
+| `apply_text_style` | Bold/italic/underline/color on every occurrence. |
+| `apply_paragraph_style` | Heading 1/2/3, alignment, indent, line spacing on a paragraph. |
+| `delete_paragraph` | Remove a whole paragraph cleanly (including its newline). |
+| `insert_table` | Insert N×M empty table at an anchor. |
+| `update_table_cell` | Set content of a specific (table, row, column). |
+| `insert_image` | Embed an image from a URL at an anchor. |
+| `apply_list_style` | Promote a paragraph to a bulleted or numbered list. |
 
 ### Sheets
-
 | Tool | What it does |
 |---|---|
-| `append_row` | Append a row to the bottom of a sheet tab. |
-| `update_cell` | Set a single cell's value. |
-| `update_range` | Set a 2D range of cells in one call. |
-| `find_and_replace_in_sheet` | Sheet-wide or whole-spreadsheet find-and-replace. |
+| `append_row` | Append a row to the bottom of a tab. |
+| `update_cell` | Set a single cell via A1 notation. |
+| `update_range` | Set a 2D range of cells. |
+| `find_and_replace_in_sheet` | Sheet-wide or whole-spreadsheet find-and-replace. Supports `dry_run`. |
+| `add_sheet` / `delete_sheet` / `rename_sheet` | Tab management. |
+| `format_range` | Bold/color/alignment/number-format on a range. |
+| `delete_rows` / `delete_columns` / `insert_rows` / `insert_columns` | Structural row/column ops. |
+| `create_chart` | Add a chart (column/bar/line/area/pie/scatter/combo/histogram) sourcing a range. |
+| `add_data_validation` | Dropdown lists, number ranges, custom-formula validation. |
+
+### Permissions
+| Tool | What it does |
+|---|---|
+| `share_file` | Share with user/group/domain/anyone at a role. |
+| `list_permissions` | List the ACL on a file. |
+| `revoke_permission` | Revoke a permission by ID (self-lockout protected). |
+| `create_share_link` | Generate a public anyone-with-link URL. |
+
+### Batch
+| Tool | What it does |
+|---|---|
+| `batch_doc_update` | Bundle multiple Doc edits into one atomic batchUpdate call. |
+| `batch_sheet_update` | Bundle multiple Sheet edits (values + structural). |
+| `batch_move` | Move many files in one call. Supports `dry_run`. |
+| `batch_delete` | Delete many files in one call. Supports `dry_run`. Capped at 20 when permanent. |
+
+### Comments / Review
+| Tool | What it does |
+|---|---|
+| `add_comment` | Add a comment to a file. |
+| `list_comments` | List comments (filter by resolved/deleted). |
+| `resolve_comment` | Mark a comment resolved. |
+| `accept_all_suggestions` / `reject_all_suggestions` | (Currently surface a structured error — the Docs API does not support bulk accept/reject; v0.3.0 may add iteration over individual suggestionIds.) |
+
+### Exports
+| Tool | What it does |
+|---|---|
+| `export_to_pdf` | Export a Doc/Sheet/Slide to PDF (base64 bytes). |
+| `export_to_docx` | Export a Doc to Microsoft Word. |
+| `export_to_xlsx` | Export a Sheet to Microsoft Excel. |
+| `get_thumbnail` | Get a thumbnail link (short-lived). |
 
 ## Quick start
 
@@ -44,17 +100,17 @@ Built by [Armory Works Technology, LLC](https://armoryworks.com) for use with [F
 npm install -g @armoryworks/drive-mcp
 ```
 
-Or use `npx` without installing globally — Claude Desktop will spawn the binary on demand if you point at it via `npx`.
+Or use `npx` without installing globally — Claude Desktop will spawn the binary on demand.
 
 ### 2. One-time OAuth setup
 
-You need to create your own Google Cloud project and OAuth credentials. This is a Google requirement for any third-party app that reads/writes Drive content; it ensures *your* tokens are scoped to *your* control.
+You need your own Google Cloud project and OAuth credentials. This is a Google requirement; it ensures *your* tokens are scoped to *your* control.
 
 ```bash
-npx @armoryworks/drive-mcp auth
+npx -y -p @armoryworks/drive-mcp armoryworks-drive-mcp-auth
 ```
 
-The first run will tell you exactly where to put your `credentials.json` and walk you through the consent flow. Tokens are saved to `~/.armoryworks/drive-mcp/tokens.json` and refresh automatically. See [docs/oauth-setup.md](./docs/oauth-setup.md) for the full step-by-step.
+The first run tells you exactly where to put your `credentials.json` and walks you through the consent flow. Tokens are saved to `~/.armoryworks/drive-mcp/tokens.json` (mode 0600) and refresh automatically. See [docs/oauth-setup.md](./docs/oauth-setup.md) for the full step-by-step.
 
 ### 3. Wire into Claude Desktop
 
@@ -71,7 +127,54 @@ Add to your `claude_desktop_config.json` (Settings → Developer → Edit Config
 }
 ```
 
-Restart Claude Desktop. The tools will appear in any new conversation.
+On Windows the spawning may need a `cmd /c` wrapper:
+
+```json
+{
+  "mcpServers": {
+    "armoryworks-drive": {
+      "command": "cmd.exe",
+      "args": ["/c", "npx.cmd", "-y", "@armoryworks/drive-mcp"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The tools appear in any new conversation.
+
+## Safety considerations
+
+This MCP can permanently delete files, change permissions, and overwrite content. The threat model is **agent misbehavior or accidental misuse**, not a malicious actor — if someone has filesystem access to your machine, they already have your tokens.
+
+Built-in guardrails:
+
+- **Two-axis confirmation for permanent delete.** `delete_file` and `batch_delete` require `permanent: true` AND `confirm_permanent: true` to actually permanently delete. Setting only `permanent: true` falls back to Trash with a warning in the response.
+- **Per-call cap on permanent batch delete.** `batch_delete` is capped at 100 file IDs normally, 20 when permanent.
+- **Self-lockout protection.** `revoke_permission` refuses to revoke your own access unless `force_revoke_self: true` is set.
+- **Dry-run mode on bulk ops.** `batch_move`, `batch_delete`, `find_and_replace`, `find_and_replace_in_sheet` accept `dry_run: true` to preview what would change without changing anything.
+- **Rate limits.** Per-minute caps on the highest-risk tools (`batch_delete`: 5/min, `delete_file`: 30/min, `revoke_permission`: 20/min, `share_file`: 50/min, `create_share_link`: 20/min) prevent runaway loops.
+- **Audit logging.** Every destructive op writes a structured stderr line. Set `LOG_LEVEL=info` for the full audit trail.
+
+Optional environment-variable guardrails:
+
+- `ALLOW_PUBLIC_SHARING=false` — disables `create_share_link` and `share_file` with `type=anyone` entirely.
+- `PROTECTED_FOLDER_IDS=root,X1Y2Z3` — destructive ops on files inside listed folders are refused.
+- `LOG_LEVEL=debug|info|warn|error|silent` — controls stderr logging verbosity (default `warn`).
+
+Operational recommendations:
+
+- Keep a periodic Drive backup (Google Takeout or third-party). Trash isn't a backup; 30 days isn't forever.
+- Use `dry_run: true` on any bulk operation that affects more than a handful of files.
+- Run with `LOG_LEVEL=info` if you want a complete record of destructive actions in your MCP server logs.
+
+## Configuration reference
+
+| Env var | Default | Effect |
+|---|---|---|
+| `ARMORYWORKS_DRIVE_MCP_HOME` | `~/.armoryworks/drive-mcp` | Where credentials.json and tokens.json live. |
+| `ALLOW_PUBLIC_SHARING` | unset (allows) | Set to `false` to block anyone-with-link sharing. |
+| `PROTECTED_FOLDER_IDS` | unset (no protection) | Comma-separated Drive folder IDs; ops on files inside are refused. |
+| `LOG_LEVEL` | `warn` | `debug` / `info` / `warn` / `error` / `silent`. |
 
 ## Security and trust model
 
@@ -97,16 +200,10 @@ npm run auth          # one-time OAuth setup
 npm test              # run the test suite
 ```
 
-The codebase is small (~1,000 lines TypeScript). Tools are grouped by Google product under `src/tools/`. The MCP server wiring is in `src/index.ts`. Everything is ESM, Node 20+, strict TypeScript.
+The codebase is small (~3,000 lines TypeScript). Tools are grouped by Google product under `src/tools/`. The MCP server wiring is in `src/index.ts`. Everything is ESM, Node 20+, strict TypeScript.
 
 ## License
 
 MIT — see [LICENSE](./LICENSE).
-
-## Why this exists
-
-Google ships an official Drive MCP that is intentionally conservative: read + create only, no destructive operations. That's a defensible default for a public service, but it means an AI agent helping you organize your Drive can create folders and copy files but can't delete the duplicates it created or move them into the right home. The "trail of orphans at root" problem.
-
-This MCP closes that gap for users who want their AI assistant to actually manage Drive content, not just produce it. Built for our own dog-fooding, published in case it's useful to anyone else.
 
 — [Armory Works](https://armoryworks.com)
