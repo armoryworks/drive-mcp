@@ -1,0 +1,62 @@
+{
+  "name": "@armoryworks/drive-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing Google Drive, Docs, and Sheets write operations (move, rename, delete, in-place edit) that the official Google Drive MCP doesn't.",
+  "license": "MIT",
+  "author": "Armory Works Technology, LLC",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "armoryworks-drive-mcp": "dist/index.js",
+    "armoryworks-drive-mcp-auth": "dist/auth-cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "auth": "node dist/auth-cli.js",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "google-auth-library": "^9.14.0",
+    "googleapis": "^144.0.0",
+    "open": "^10.1.0",
+    "zod": "^3.23.0",
+    "zod-to-json-schema": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/armoryworks/drive-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/armoryworks/drive-mcp/issues"
+  },
+  "homepage": "https://github.com/armoryworks/drive-mcp#readme",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "google-drive",
+    "google-docs",
+    "google-sheets",
+    "claude",
+    "anthropic"
+  ]
+}

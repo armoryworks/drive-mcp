@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "armoryworks-drive": {
+      "command": "npx",
+      "args": ["-y", "@armoryworks/drive-mcp"]
+    }
+  }
+}
