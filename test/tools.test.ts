@@ -46,10 +46,20 @@ describe('Drive tool schemas', () => {
     ).toBe(true);
   });
 
-  it('delete_file defaults permanent to false', () => {
+  it('delete_file accepts file_id and silently drops removed fields', () => {
+    // v0.2.1 removed permanent + confirm_permanent. The schema now accepts
+    // only file_id; any extras are stripped by Zod default strip behavior.
     const parsed = deleteFileSchema.safeParse({ file_id: 'abc' });
     expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data.permanent).toBe(false);
+    // Removed-field assertion: 'permanent' is no longer in the parsed shape.
+    if (parsed.success) {
+      expect('permanent' in parsed.data).toBe(false);
+      expect('confirm_permanent' in parsed.data).toBe(false);
+    }
+    // file_id is the only required field; anything else (legacy) is dropped silently.
+    const legacy = deleteFileSchema.safeParse({ file_id: 'abc', permanent: true, confirm_permanent: true });
+    expect(legacy.success).toBe(true);
+    if (legacy.success) expect('permanent' in legacy.data).toBe(false);
   });
 
   it('restore_file requires file_id', () => {
